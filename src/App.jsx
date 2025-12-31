@@ -19,7 +19,8 @@ import {
 import { 
   Calendar, Clock, Trash2, ChevronLeft, ChevronRight,
   Briefcase, Dumbbell, Utensils, Moon, Sun, Search, Send, Microscope, ListPlus, 
-  TrendingUp, Activity, X, Phone, Languages, LogOut, MessageCircle, BarChart3, PieChart, FileText
+  TrendingUp, Activity, X, Phone, Languages, LogOut, MessageCircle, BarChart3, PieChart, FileText,
+  Target, Trophy
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -46,19 +47,19 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'lifeos-pro-v3';
 
 const TRANSLATIONS = {
   en: {
-    planner: "Planner", gymProgress: "Gym Progress", workDoc: "Work Documentation", timeAnalytics: "Time Analytics",
-    gym: "GYM", work: "WORK", meal: "MEAL", rest: "REST", wake: "WAKE", speech: "SPEECH", other: "OTHER",
+    planner: "Planner", gymProgress: "Gym Progress", workDoc: "Activity Log", timeAnalytics: "Time Analytics",
+    gym: "GYM", work: "WORK", jjp: "JJP", basketball: "B-BALL", meal: "MEAL", rest: "REST", wake: "WAKE", speech: "SPEECH", other: "OTHER",
     save: "Save", cancel: "Cancel", delete: "Delete", addEx: "Add Exercise", weight: "kg", reps: "reps",
     logout: "Log Out", loading: "Syncing LifeOS...", w_call: "Call", w_research: "Research", w_search: "Search", 
     w_send: "Send Out", w_other: "Others", remarks: "Remarks / Notes...", changeCat: "Change Category",
     clearSlot: "Clear Slot"
   },
   zh: {
-    planner: "日程規劃", gymProgress: "健身進度", workDoc: "工作文獻", timeAnalytics: "時間分析",
-    gym: "健身", work: "工作", meal: "用餐", rest: "休息", wake: "起床", speech: "語言治療", other: "其他",
+    planner: "日程規劃", gymProgress: "健身進度", workDoc: "活動日誌", timeAnalytics: "時間分析",
+    gym: "健身", work: "工作", jjp: "JJP", basketball: "籃球", meal: "用餐", rest: "休息", wake: "起床", speech: "語言治療", other: "其他",
     save: "保存", cancel: "取消", delete: "刪除", addEx: "新增動作", weight: "公斤", reps: "次數",
     logout: "登出", loading: "同步中...", w_call: "電話", w_research: "研究", w_search: "搜尋", 
-    w_send: "發送", w_other: "其他工作", remarks: "備註 / 內容...", changeCat: "修改類別",
+    w_send: "發送", w_other: "其他", remarks: "備註 / 內容...", changeCat: "修改類別",
     clearSlot: "清空時段"
   }
 };
@@ -94,23 +95,25 @@ export default function App() {
   
   const [selection, setSelection] = useState(null);
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
-  const [isWorkModalOpen, setIsWorkModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false); // Used for WORK, JJP, OTHER
   const [isGymModalOpen, setIsGymModalOpen] = useState(false);
   
-  const [workDetails, setWorkDetails] = useState({ type: 'OTHER_WORK', remarks: '' });
+  const [detailData, setDetailData] = useState({ type: 'WORK', subType: 'OTHER_WORK', remarks: '' });
   const [currentWorkout, setCurrentWorkout] = useState([]);
   
   const isDragging = useRef(false);
   const t = TRANSLATIONS[lang];
 
   const ACTIVITY_CONFIG = {
-    GYM: { color: 'bg-indigo-600', text: 'text-white', icon: <Dumbbell size={14} />, label: t.gym },
     WORK: { color: 'bg-orange-500', text: 'text-white', icon: <Briefcase size={14} />, label: t.work },
+    JJP: { color: 'bg-purple-600', text: 'text-white', icon: <Target size={14} />, label: t.jjp },
+    GYM: { color: 'bg-indigo-600', text: 'text-white', icon: <Dumbbell size={14} />, label: t.gym },
+    BASKETBALL: { color: 'bg-amber-500', text: 'text-white', icon: <Trophy size={14} />, label: t.basketball },
     SPEECH: { color: 'bg-emerald-500', text: 'text-white', icon: <MessageCircle size={14} />, label: t.speech },
     MEAL: { color: 'bg-red-500', text: 'text-white', icon: <Utensils size={14} />, label: t.meal },
     REST: { color: 'bg-slate-700', text: 'text-white', icon: <Moon size={14} />, label: t.rest },
     WAKE: { color: 'bg-amber-100', text: 'text-amber-900', icon: <Sun size={14} />, label: t.wake },
-    OTHER: { color: 'bg-slate-200', text: 'text-gray-600', icon: <Clock size={14} />, label: t.other }
+    OTHER: { color: 'bg-slate-300', text: 'text-slate-800', icon: <Clock size={14} />, label: t.other }
   };
 
   useEffect(() => {
@@ -154,19 +157,21 @@ export default function App() {
     if (type === 'DELETE') {
       await Promise.all(slots.map(s => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'events', `${dayKey}-${s.toString().replace('.','_')}`))));
       setIsSlotModalOpen(false);
-      setIsWorkModalOpen(false);
+      setIsDetailModalOpen(false);
       setIsGymModalOpen(false);
       return;
     }
 
-    if (type === 'WORK' && !payload) {
+    // Modal Trigger Logic
+    if ((type === 'WORK' || type === 'JJP' || type === 'OTHER') && !payload) {
       const existing = events[`${dayKey}-${slots[0].toString().replace('.','_')}`];
-      setWorkDetails({ 
-        type: existing?.subType || 'OTHER_WORK', 
+      setDetailData({ 
+        type: type,
+        subType: existing?.subType || 'OTHER_WORK', 
         remarks: existing?.remarks || '' 
       });
       setIsSlotModalOpen(false);
-      setIsWorkModalOpen(true);
+      setIsDetailModalOpen(true);
       return;
     }
 
@@ -178,9 +183,10 @@ export default function App() {
       return;
     }
 
+    // Saving Logic
     const baseData = { type, dayKey, timestamp: Date.now() };
-    if (type === 'WORK' && payload) {
-      baseData.subType = payload.type;
+    if (payload && typeof payload === 'object') {
+      baseData.subType = payload.subType;
       baseData.remarks = payload.remarks;
     }
 
@@ -189,7 +195,7 @@ export default function App() {
     })));
     
     setIsSlotModalOpen(false);
-    setIsWorkModalOpen(false);
+    setIsDetailModalOpen(false);
   };
 
   const analytics = useMemo(() => {
@@ -225,7 +231,7 @@ export default function App() {
         </div>
         <nav className="space-y-1 flex-1">
           <button onClick={() => setActiveTab('planner')} className={`flex items-center gap-3 w-full p-4 rounded-2xl transition-all ${activeTab === 'planner' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-100'}`}><Calendar size={18}/> <span className="font-bold">{t.planner}</span></button>
-          <button onClick={() => setActiveTab('work-doc')} className={`flex items-center gap-3 w-full p-4 rounded-2xl transition-all ${activeTab === 'work-doc' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-100'}`}><BarChart3 size={18}/> <span className="font-bold">{t.workDoc}</span></button>
+          <button onClick={() => setActiveTab('work-doc')} className={`flex items-center gap-3 w-full p-4 rounded-2xl transition-all ${activeTab === 'work-doc' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-100'}`}><FileText size={18}/> <span className="font-bold">{t.workDoc}</span></button>
           <button onClick={() => setActiveTab('analytics')} className={`flex items-center gap-3 w-full p-4 rounded-2xl transition-all ${activeTab === 'analytics' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-100'}`}><PieChart size={18}/> <span className="font-bold">{t.timeAnalytics}</span></button>
           <button onClick={() => setActiveTab('gym-progress')} className={`flex items-center gap-3 w-full p-4 rounded-2xl transition-all ${activeTab === 'gym-progress' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-100'}`}><TrendingUp size={18}/> <span className="font-bold">{t.gymProgress}</span></button>
         </nav>
@@ -278,7 +284,7 @@ export default function App() {
                             onClick={() => {
                               setSelection({ dayKey, slots: [slot] });
                               if (event?.type === 'GYM') handleSlotAction('GYM');
-                              else if (event?.type === 'WORK') handleSlotAction('WORK');
+                              else if (['WORK', 'JJP', 'OTHER'].includes(event?.type)) handleSlotAction(event.type);
                               else setIsSlotModalOpen(true);
                             }}
                             className="p-0.5 border-r border-slate-50 last:border-r-0 cursor-crosshair relative group">
@@ -372,14 +378,16 @@ export default function App() {
 
           {activeTab === 'work-doc' && (
              <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-               {Object.values(events).filter(e => e.type === 'WORK' && e.remarks).map((e, idx) => (
+               {Object.values(events).filter(e => e.remarks).map((e, idx) => (
                  <div key={idx} className="bg-white p-6 rounded-3xl border shadow-sm">
                    <div className="flex items-center gap-2 mb-4">
-                     <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white"><Briefcase size={14}/></div>
+                     <div className={`w-8 h-8 ${ACTIVITY_CONFIG[e.type]?.color} rounded-lg flex items-center justify-center text-white`}>
+                       {ACTIVITY_CONFIG[e.type]?.icon}
+                     </div>
                      <div>
                        <p className="text-[10px] font-black uppercase text-slate-400">{e.dayKey}</p>
-                       <p className="text-xs font-black uppercase text-orange-600">
-                         {WORK_TYPES.find(wt => wt.id === e.subType)?.label ? t[WORK_TYPES.find(wt => wt.id === e.subType).label] : 'Work'}
+                       <p className={`text-xs font-black uppercase ${ACTIVITY_CONFIG[e.type]?.text.replace('text-', 'text-')}`}>
+                         {e.type} {e.subType ? `- ${t[WORK_TYPES.find(wt => wt.id === e.subType)?.label] || e.subType}` : ''}
                        </p>
                      </div>
                    </div>
@@ -412,33 +420,38 @@ export default function App() {
         </div>
       )}
 
-      {/* DETAILED WORK MODAL */}
-      {isWorkModalOpen && (
+      {/* DETAIL MODAL (WORK, JJP, OTHER) */}
+      {isDetailModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[40px] w-full max-w-md p-8 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
-               <h3 className="text-xl font-black uppercase tracking-wider">{t.work}</h3>
+               <h3 className="text-xl font-black uppercase tracking-wider">{ACTIVITY_CONFIG[detailData.type]?.label}</h3>
                <div className="flex gap-2">
                  <button onClick={() => setIsSlotModalOpen(true)} className="p-3 text-indigo-600 hover:bg-indigo-50 rounded-2xl text-[10px] font-black uppercase">{t.changeCat}</button>
                  <button onClick={() => handleSlotAction('DELETE')} className="p-3 text-red-500 hover:bg-red-50 rounded-2xl"><Trash2 size={20}/></button>
                </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 mb-6">
-              {WORK_TYPES.map(wt => (
-                <button key={wt.id} onClick={() => setWorkDetails({...workDetails, type: wt.id})} className={`flex flex-col items-center gap-2 p-4 rounded-2xl transition-all ${workDetails.type === wt.id ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-400'}`}>
-                   {wt.icon} <span className="font-black text-[8px] uppercase">{t[wt.label]}</span>
-                </button>
-              ))}
-            </div>
+            
+            {/* Show Sub-types only for WORK */}
+            {detailData.type === 'WORK' && (
+              <div className="grid grid-cols-3 gap-2 mb-6">
+                {WORK_TYPES.map(wt => (
+                  <button key={wt.id} onClick={() => setDetailData({...detailData, subType: wt.id})} className={`flex flex-col items-center gap-2 p-4 rounded-2xl transition-all ${detailData.subType === wt.id ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-400'}`}>
+                    {wt.icon} <span className="font-black text-[8px] uppercase">{t[wt.label]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <textarea 
-              value={workDetails.remarks} 
-              onChange={e => setWorkDetails({...workDetails, remarks: e.target.value})}
+              value={detailData.remarks} 
+              onChange={e => setDetailData({...detailData, remarks: e.target.value})}
               placeholder={t.remarks}
-              className="w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm font-medium border-0 focus:ring-2 focus:ring-orange-500 mb-6 resize-none"
+              className={`w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm font-medium border-0 focus:ring-2 focus:ring-${detailData.type === 'WORK' ? 'orange' : detailData.type === 'JJP' ? 'purple' : 'slate'}-500 mb-6 resize-none`}
             />
             <div className="flex gap-3">
-              <button onClick={() => setIsWorkModalOpen(false)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px]">{t.cancel}</button>
-              <button onClick={() => handleSlotAction('WORK', workDetails)} className="flex-[2] py-4 bg-orange-500 text-white rounded-2xl font-black shadow-lg shadow-orange-100 uppercase text-[10px]">{t.save}</button>
+              <button onClick={() => setIsDetailModalOpen(false)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px]">{t.cancel}</button>
+              <button onClick={() => handleSlotAction(detailData.type, detailData)} className={`flex-[2] py-4 ${ACTIVITY_CONFIG[detailData.type]?.color} text-white rounded-2xl font-black shadow-lg uppercase text-[10px]`}>{t.save}</button>
             </div>
           </div>
         </div>
@@ -482,7 +495,6 @@ export default function App() {
                <button onClick={() => handleSlotAction('DELETE')} className="p-5 text-red-500 bg-red-50 rounded-3xl"><Trash2/></button>
                <button onClick={async () => { 
                  await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'workouts', selection.dayKey), { exercises: currentWorkout, date: selection.dayKey }); 
-                 // Also ensure the slot in planner is marked as GYM
                  await handleSlotAction('GYM', true);
                  setIsGymModalOpen(false); 
                }} className="flex-1 py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest">{t.save}</button>
