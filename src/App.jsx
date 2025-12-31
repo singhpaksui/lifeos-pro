@@ -23,9 +23,24 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: ""
+// 1. Paste your Firebase config values here:
+const manualFirebaseConfig = {
+apiKey: "AIzaSyBbJjQrikfNIftAmoVXaEcPDdgJuPb3Hh0",
+  authDomain: "lyfeos-cc0be.firebaseapp.com",
+  projectId: "lyfeos-cc0be",
+  storageBucket: "lyfeos-cc0be.firebasestorage.app",
+  messagingSenderId: "849608106926",
+  appId: "1:849608106926:web:68dc438783d1c9f31bde3f",
+  measurementId: "G-L2HPHMBV35"
 };
+
+// 2. This logic checks if the environment provides a config, otherwise uses your manual one
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : (manualFirebaseConfig.apiKey ? manualFirebaseConfig : {
+      apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: ""
+    });
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
