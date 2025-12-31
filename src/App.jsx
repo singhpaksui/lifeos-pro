@@ -23,9 +23,8 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
-// 1. Paste your Firebase config values here:
 const manualFirebaseConfig = {
-apiKey: "AIzaSyBbJjQrikfNIftAmoVXaEcPDdgJuPb3Hh0",
+  apiKey: "AIzaSyBbJjQrikfNIftAmoVXaEcPDdgJuPb3Hh0",
   authDomain: "lyfeos-cc0be.firebaseapp.com",
   projectId: "lyfeos-cc0be",
   storageBucket: "lyfeos-cc0be.firebasestorage.app",
@@ -34,7 +33,6 @@ apiKey: "AIzaSyBbJjQrikfNIftAmoVXaEcPDdgJuPb3Hh0",
   measurementId: "G-L2HPHMBV35"
 };
 
-// 2. This logic checks if the environment provides a config, otherwise uses your manual one
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : (manualFirebaseConfig.apiKey ? manualFirebaseConfig : {
@@ -52,14 +50,16 @@ const TRANSLATIONS = {
     gym: "GYM", work: "WORK", meal: "MEAL", rest: "REST", wake: "WAKE", speech: "SPEECH", other: "OTHER",
     save: "Save", cancel: "Cancel", delete: "Delete", addEx: "Add Exercise", weight: "kg", reps: "reps",
     logout: "Log Out", loading: "Syncing LifeOS...", w_call: "Call", w_research: "Research", w_search: "Search", 
-    w_send: "Send Out", w_other: "Others", remarks: "Remarks / Notes...", changeCat: "Change Category"
+    w_send: "Send Out", w_other: "Others", remarks: "Remarks / Notes...", changeCat: "Change Category",
+    clearSlot: "Clear Slot"
   },
   zh: {
     planner: "日程規劃", gymProgress: "健身進度", workDoc: "工作文獻", timeAnalytics: "時間分析",
     gym: "健身", work: "工作", meal: "用餐", rest: "休息", wake: "起床", speech: "語言治療", other: "其他",
     save: "保存", cancel: "取消", delete: "刪除", addEx: "新增動作", weight: "公斤", reps: "次數",
     logout: "登出", loading: "同步中...", w_call: "電話", w_research: "研究", w_search: "搜尋", 
-    w_send: "發送", w_other: "其他工作", remarks: "備註 / 內容...", changeCat: "修改類別"
+    w_send: "發送", w_other: "其他工作", remarks: "備註 / 內容...", changeCat: "修改類別",
+    clearSlot: "清空時段"
   }
 };
 
@@ -71,7 +71,17 @@ const WORK_TYPES = [
   { id: 'OTHER_WORK', label: 'w_other', icon: <ListPlus size={14}/> }
 ];
 
-const EXERCISE_LIST = ["Bench Press", "Squat", "Deadlift", "Overhead Press", "Barbell Row", "Bicep Curl", "Tricep Pushdown"];
+const EXERCISE_LIST = [
+  "Bench Press (barbell)", "Bench Press (dumbbell)", "Incline Bench Press (barbell)", 
+  "Incline Bench Press (dumbbell)", "Iso-Lateral Incline Bench Press (machine)", "Chest Fly (machine)", 
+  "Chest Fly (cable)", "Cable Cross-over (cable)", "Bicep Curls (dumbbell)", "Incline Curls (dumbbell)", 
+  "Preacher Curl", "Bayesian Curl (cable)", "Tricep Extension (cable)", "Skull Crusher", 
+  "Tricep Extension (overhead)", "Pull-ups", "Seated Row (machine)", "Iso-Lateral Row (machine)", 
+  "Deadlift (barbell)", "Cable Pulldowns", "Overhead Press (dumbbell)", "Overhead Press (barbell)", 
+  "Lateral Raises", "Reverse Fly (machine)", "Reverse Fly (cable)", "Squat (barbell)", 
+  "Bulgarian Split Squat", "Hip Abductor", "Hip Adductor", "Hip Thrust"
+];
+
 const SLOTS = Array.from({ length: 48 }, (_, i) => i * 0.5);
 
 export default function App() {
@@ -103,7 +113,6 @@ export default function App() {
     OTHER: { color: 'bg-slate-200', text: 'text-gray-600', icon: <Clock size={14} />, label: t.other }
   };
 
-  // Auth Initialization
   useEffect(() => {
     const initAuth = async () => {
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -116,7 +125,6 @@ export default function App() {
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // Firestore Sync
   useEffect(() => {
     if (!user) return;
     
@@ -242,12 +250,17 @@ export default function App() {
             <div className="bg-white rounded-[24px] md:rounded-[40px] shadow-sm border border-slate-200 overflow-hidden">
                 <div className="grid grid-cols-8 border-b bg-slate-50/50 font-black uppercase text-[10px] text-slate-400">
                   <div className="p-4 border-r"></div>
-                  {weekRange.map((date, i) => (
-                    <div key={i} className={`p-2 md:p-4 text-center border-r last:border-r-0 ${getDayKey(date) === getDayKey(new Date()) ? 'bg-indigo-50/50 text-indigo-600' : ''}`}>
-                      <div className="text-[8px] md:text-[10px]">{date.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { weekday: 'short' })}</div>
-                      <div className="text-sm md:text-xl text-slate-900">{date.getDate()}</div>
-                    </div>
-                  ))}
+                  {weekRange.map((date, i) => {
+                    const dayKey = getDayKey(date);
+                    const hasWorkout = allWorkouts.some(w => w.id === dayKey);
+                    return (
+                      <div key={i} className={`p-2 md:p-4 text-center border-r last:border-r-0 relative ${dayKey === getDayKey(new Date()) ? 'bg-indigo-50/50 text-indigo-600' : ''}`}>
+                        <div className="text-[8px] md:text-[10px]">{date.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { weekday: 'short' })}</div>
+                        <div className="text-sm md:text-xl text-slate-900">{date.getDate()}</div>
+                        {hasWorkout && <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-indigo-400 rounded-full" />}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="h-[calc(100vh-220px)] overflow-y-auto relative">
                   {SLOTS.map(slot => (
@@ -281,6 +294,41 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+            </div>
+          )}
+
+          {activeTab === 'gym-progress' && (
+            <div className="max-w-4xl mx-auto space-y-6">
+              {allWorkouts.length === 0 ? (
+                <div className="text-center py-20 bg-white rounded-[40px] border">
+                  <Dumbbell size={48} className="mx-auto text-slate-200 mb-4" />
+                  <p className="text-slate-400 font-bold">No gym sessions logged yet.</p>
+                </div>
+              ) : (
+                allWorkouts.map(workout => (
+                  <div key={workout.id} className="bg-white p-6 rounded-[32px] border shadow-sm">
+                    <div className="flex justify-between items-center mb-4 border-b pb-4">
+                      <h4 className="font-black text-indigo-600 uppercase tracking-tighter">{workout.id}</h4>
+                      <button onClick={async () => await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'workouts', workout.id))} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {workout.exercises?.map((ex, idx) => (
+                        <div key={idx} className="bg-slate-50 p-4 rounded-2xl">
+                          <p className="font-black text-[11px] uppercase mb-2 text-slate-700">{ex.name}</p>
+                          <div className="space-y-1">
+                            {ex.sets?.filter(s => s.weight && s.reps).map((s, si) => (
+                              <div key={si} className="flex justify-between text-[10px] font-bold text-slate-400">
+                                <span>SET {si + 1}</span>
+                                <span>{s.weight}kg × {s.reps}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
 
@@ -348,14 +396,18 @@ export default function App() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[40px] w-full max-w-sm p-8 shadow-2xl">
             <h3 className="text-xl font-black mb-8 text-center uppercase tracking-widest text-slate-400">Select Activity</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 mb-4">
               {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => (
                 <button key={key} onClick={() => handleSlotAction(key)} className={`flex flex-col items-center gap-2 p-5 rounded-[28px] ${cfg.color} ${cfg.text} hover:scale-105 transition-all shadow-lg`}>
                    {cfg.icon} <span className="font-black text-[9px] uppercase tracking-widest">{cfg.label}</span>
                 </button>
               ))}
             </div>
-            <button onClick={() => setIsSlotModalOpen(false)} className="w-full mt-6 py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px]">{t.cancel}</button>
+            
+            <button onClick={() => handleSlotAction('DELETE')} className="w-full flex items-center justify-center gap-2 py-4 bg-red-50 text-red-500 rounded-2xl font-black uppercase text-[10px] hover:bg-red-100 transition-colors mb-2">
+              <Trash2 size={14}/> {t.clearSlot}
+            </button>
+            <button onClick={() => setIsSlotModalOpen(false)} className="w-full py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px] hover:bg-slate-200 transition-colors">{t.cancel}</button>
           </div>
         </div>
       )}
@@ -428,7 +480,12 @@ export default function App() {
             </div>
             <div className="p-6 bg-white border-t flex gap-4">
                <button onClick={() => handleSlotAction('DELETE')} className="p-5 text-red-500 bg-red-50 rounded-3xl"><Trash2/></button>
-               <button onClick={async () => { await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'workouts', selection.dayKey), { exercises: currentWorkout, date: selection.dayKey }); setIsGymModalOpen(false); }} className="flex-1 py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest">{t.save}</button>
+               <button onClick={async () => { 
+                 await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'workouts', selection.dayKey), { exercises: currentWorkout, date: selection.dayKey }); 
+                 // Also ensure the slot in planner is marked as GYM
+                 await handleSlotAction('GYM', true);
+                 setIsGymModalOpen(false); 
+               }} className="flex-1 py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest">{t.save}</button>
             </div>
           </div>
         </div>
