@@ -1,25 +1,35 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, onAuthStateChanged, signInWithCustomToken, signInAnonymously, signOut 
+  getAuth, 
+  onAuthStateChanged, 
+  signInWithCustomToken, 
+  signInAnonymously, 
+  signOut 
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, getDoc, query
+  getFirestore, 
+  collection, 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  deleteDoc, 
+  getDoc 
 } from 'firebase/firestore';
 import { 
-  Calendar, Layout, Clock, Trash2, ChevronLeft, ChevronRight,
+  Calendar, Clock, Trash2, ChevronLeft, ChevronRight,
   Briefcase, Dumbbell, Utensils, Moon, Sun, Search, Send, Microscope, ListPlus, 
   TrendingUp, Activity, X, Phone, Languages, LogOut, MessageCircle, BarChart3, PieChart, FileText
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
-const firebaseConfig = typeof window !== 'undefined' && window.__firebase_config ? JSON.parse(window.__firebase_config) : {
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: ""
 };
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = (typeof window !== 'undefined' && window.__app_id) ? window.__app_id : 'lifeos-pro-v3';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'lifeos-pro-v3';
 
 const TRANSLATIONS = {
   en: {
@@ -78,28 +88,37 @@ export default function App() {
     OTHER: { color: 'bg-slate-200', text: 'text-gray-600', icon: <Clock size={14} />, label: t.other }
   };
 
+  // Auth Initialization
   useEffect(() => {
     const initAuth = async () => {
-      const token = typeof window !== 'undefined' ? window.__initial_auth_token : undefined;
-      if (token) await signInWithCustomToken(auth, token).catch(() => signInAnonymously(auth));
-      else await signInAnonymously(auth);
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token).catch(() => signInAnonymously(auth));
+      } else {
+        await signInAnonymously(auth);
+      }
     };
     initAuth();
     return onAuthStateChanged(auth, setUser);
   }, []);
 
+  // Firestore Sync
   useEffect(() => {
     if (!user) return;
-    const unsubEvents = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'events'), (snap) => {
+    
+    const eventsPath = collection(db, 'artifacts', appId, 'users', user.uid, 'events');
+    const unsubEvents = onSnapshot(eventsPath, (snap) => {
       const data = {};
       snap.forEach(d => data[d.id] = d.data());
       setEvents(data);
-    });
-    const unsubWorkouts = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'workouts'), (snap) => {
+    }, (err) => console.error("Event Sync Error:", err));
+
+    const workoutsPath = collection(db, 'artifacts', appId, 'users', user.uid, 'workouts');
+    const unsubWorkouts = onSnapshot(workoutsPath, (snap) => {
       const list = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() }));
       setAllWorkouts(list.sort((a, b) => b.date.localeCompare(a.date)));
-    });
+    }, (err) => console.error("Workout Sync Error:", err));
+
     return () => { unsubEvents(); unsubWorkouts(); };
   }, [user]);
 
@@ -173,7 +192,7 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans select-none overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-72 bg-white border-r border-slate-200 p-6 flex flex-col shrink-0">
+      <aside className="w-72 bg-white border-r border-slate-200 p-6 flex flex-col shrink-0 hidden md:flex">
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Activity size={24} /></div>
           <div>
@@ -194,59 +213,59 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b px-8 py-5 flex items-center justify-between">
+        <header className="bg-white border-b px-4 md:px-8 py-5 flex items-center justify-between">
           <div className="flex items-center gap-4">
              <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()-7); setSelectedDate(d); }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft size={20}/></button>
-             <h2 className="text-lg font-black">{selectedDate.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { month: 'long', year: 'numeric' })}</h2>
+             <h2 className="text-sm md:text-lg font-black">{selectedDate.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { month: 'long', year: 'numeric' })}</h2>
              <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()+7); setSelectedDate(d); }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight size={20}/></button>
           </div>
-          <div className="px-4 py-2 bg-slate-100 rounded-xl text-[10px] font-black text-slate-500">USER: {user.uid.slice(0,8)}...</div>
+          <div className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-500">ID: {user.uid.slice(0,6)}...</div>
         </header>
 
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto p-4 md:p-8">
           {activeTab === 'planner' && (
-            <div className="bg-white rounded-[40px] shadow-sm border border-slate-200 overflow-hidden">
-               <div className="grid grid-cols-8 border-b bg-slate-50/50 font-black uppercase text-[10px] text-slate-400">
-                 <div className="p-4 border-r"></div>
-                 {weekRange.map((date, i) => (
-                   <div key={i} className={`p-4 text-center border-r last:border-r-0 ${getDayKey(date) === getDayKey(new Date()) ? 'bg-indigo-50/50 text-indigo-600' : ''}`}>
-                     <div>{date.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { weekday: 'short' })}</div>
-                     <div className="text-xl text-slate-900">{date.getDate()}</div>
-                   </div>
-                 ))}
-               </div>
-               <div className="h-[calc(100vh-220px)] overflow-y-auto relative">
-                 {SLOTS.map(slot => (
-                   <div key={slot} className="grid grid-cols-8 border-b border-slate-50 min-h-[48px]">
-                     <div className="p-2 text-right border-r text-[9px] font-bold text-slate-300 flex items-center justify-end">{slot % 1 === 0 ? `${Math.floor(slot)}:00` : ''}</div>
-                     {weekRange.map((date, i) => {
-                       const dayKey = getDayKey(date);
-                       const event = events[`${dayKey}-${slot.toString().replace('.', '_')}`];
-                       const config = event ? ACTIVITY_CONFIG[event.type] : null;
-                       return (
-                         <div key={i} 
-                           onMouseDown={() => { isDragging.current = true; setSelection({ dayKey, slots: [slot] }); }}
-                           onMouseEnter={() => { if (isDragging.current && selection?.dayKey === dayKey) setSelection(p => ({...p, slots: [...new Set([...p.slots, slot])]})); }}
-                           onMouseUp={() => { if (isDragging.current) setIsSlotModalOpen(true); isDragging.current = false; }}
-                           onClick={() => {
-                             setSelection({ dayKey, slots: [slot] });
-                             if (event?.type === 'GYM') handleSlotAction('GYM');
-                             else if (event?.type === 'WORK') handleSlotAction('WORK');
-                             else setIsSlotModalOpen(true);
-                           }}
-                           className="p-0.5 border-r border-slate-50 last:border-r-0 cursor-crosshair relative group">
-                           {config && (
-                             <div className={`w-full h-full rounded-lg px-2 flex items-center gap-2 shadow-sm ${config.color} ${config.text} transition-all active:scale-95`}>
-                               {config.icon} <span className="text-[10px] font-black uppercase truncate">{config.label}</span>
-                               {event.remarks && <div className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><FileText size={8} /></div>}
-                             </div>
-                           )}
-                         </div>
-                       );
-                     })}
-                   </div>
-                 ))}
-               </div>
+            <div className="bg-white rounded-[24px] md:rounded-[40px] shadow-sm border border-slate-200 overflow-hidden">
+                <div className="grid grid-cols-8 border-b bg-slate-50/50 font-black uppercase text-[10px] text-slate-400">
+                  <div className="p-4 border-r"></div>
+                  {weekRange.map((date, i) => (
+                    <div key={i} className={`p-2 md:p-4 text-center border-r last:border-r-0 ${getDayKey(date) === getDayKey(new Date()) ? 'bg-indigo-50/50 text-indigo-600' : ''}`}>
+                      <div className="text-[8px] md:text-[10px]">{date.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { weekday: 'short' })}</div>
+                      <div className="text-sm md:text-xl text-slate-900">{date.getDate()}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="h-[calc(100vh-220px)] overflow-y-auto relative">
+                  {SLOTS.map(slot => (
+                    <div key={slot} className="grid grid-cols-8 border-b border-slate-50 min-h-[48px]">
+                      <div className="p-2 text-right border-r text-[9px] font-bold text-slate-300 flex items-center justify-end">{slot % 1 === 0 ? `${Math.floor(slot)}:00` : ''}</div>
+                      {weekRange.map((date, i) => {
+                        const dayKey = getDayKey(date);
+                        const event = events[`${dayKey}-${slot.toString().replace('.', '_')}`];
+                        const config = event ? ACTIVITY_CONFIG[event.type] : null;
+                        return (
+                          <div key={i} 
+                            onMouseDown={() => { isDragging.current = true; setSelection({ dayKey, slots: [slot] }); }}
+                            onMouseEnter={() => { if (isDragging.current && selection?.dayKey === dayKey) setSelection(p => ({...p, slots: [...new Set([...p.slots, slot])]})); }}
+                            onMouseUp={() => { if (isDragging.current) setIsSlotModalOpen(true); isDragging.current = false; }}
+                            onClick={() => {
+                              setSelection({ dayKey, slots: [slot] });
+                              if (event?.type === 'GYM') handleSlotAction('GYM');
+                              else if (event?.type === 'WORK') handleSlotAction('WORK');
+                              else setIsSlotModalOpen(true);
+                            }}
+                            className="p-0.5 border-r border-slate-50 last:border-r-0 cursor-crosshair relative group">
+                            {config && (
+                              <div className={`w-full h-full rounded-lg px-2 flex items-center gap-2 shadow-sm ${config.color} ${config.text} transition-all active:scale-95`}>
+                                {config.icon} <span className="text-[10px] font-black uppercase hidden md:inline truncate">{config.label}</span>
+                                {event.remarks && <div className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><FileText size={8} /></div>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
             </div>
           )}
 
@@ -266,7 +285,8 @@ export default function App() {
                  <div className="space-y-4">
                    {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => {
                      const hrs = analytics[key] || 0;
-                     const pct = Math.round((hrs / (Object.values(analytics).reduce((a,b)=>a+b, 0) || 1)) * 100);
+                     const total = Object.values(analytics).reduce((a,b)=>a+b, 0) || 1;
+                     const pct = Math.round((hrs / total) * 100);
                      return (
                        <div key={key} className="bg-white p-4 rounded-2xl border flex items-center gap-4">
                          <div className={`w-10 h-10 rounded-xl ${cfg.color} flex items-center justify-center text-white`}>{cfg.icon}</div>
@@ -295,7 +315,9 @@ export default function App() {
                      <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white"><Briefcase size={14}/></div>
                      <div>
                        <p className="text-[10px] font-black uppercase text-slate-400">{e.dayKey}</p>
-                       <p className="text-xs font-black uppercase text-orange-600">{WORK_TYPES.find(wt => wt.id === e.subType)?.label ? t[WORK_TYPES.find(wt => wt.id === e.subType).label] : 'Work'}</p>
+                       <p className="text-xs font-black uppercase text-orange-600">
+                         {WORK_TYPES.find(wt => wt.id === e.subType)?.label ? t[WORK_TYPES.find(wt => wt.id === e.subType).label] : 'Work'}
+                       </p>
                      </div>
                    </div>
                    <p className="text-sm text-slate-600 font-medium italic">"{e.remarks}"</p>
@@ -309,7 +331,7 @@ export default function App() {
       {/* SLOT SELECTION MODAL */}
       {isSlotModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[40px] w-full max-w-sm p-8 shadow-2xl scale-in-center">
+          <div className="bg-white rounded-[40px] w-full max-w-sm p-8 shadow-2xl">
             <h3 className="text-xl font-black mb-8 text-center uppercase tracking-widest text-slate-400">Select Activity</h3>
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => (
