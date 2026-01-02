@@ -20,7 +20,7 @@ import {
   Calendar, Clock, Trash2, ChevronLeft, ChevronRight,
   Briefcase, Dumbbell, Utensils, Moon, Sun, Search, Send, Microscope, ListPlus, 
   TrendingUp, Activity, X, Phone, Languages, LogOut, MessageCircle, BarChart3, PieChart, FileText,
-  Target, Trophy
+  Target, Trophy, Plane, Heart, Sparkles, BookOpen, Coffee
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -49,18 +49,20 @@ const TRANSLATIONS = {
   en: {
     planner: "Planner", gymProgress: "Gym Progress", workDoc: "Activity Log", timeAnalytics: "Time Analytics",
     gym: "GYM", work: "WORK", jjp: "JJP", basketball: "B-BALL", meal: "MEAL", rest: "REST", wake: "WAKE", speech: "SPEECH", other: "OTHER",
+    sleep: "SLEEP", travel: "TRAVEL", date: "DATE", happen: "HAPPEN", reading: "READ", chilling: "CHILL",
     save: "Save", cancel: "Cancel", delete: "Delete", addEx: "Add Exercise", weight: "kg", reps: "reps",
     logout: "Log Out", loading: "Syncing LifeOS...", w_call: "Call", w_research: "Research", w_search: "Search", 
     w_send: "Send Out", w_other: "Others", remarks: "Remarks / Notes...", changeCat: "Change Category",
-    clearSlot: "Clear Slot"
+    clearSlot: "Clear Slot", selectionPrompt: "Apply to selected slots"
   },
   zh: {
     planner: "日程規劃", gymProgress: "健身進度", workDoc: "活動日誌", timeAnalytics: "時間分析",
     gym: "健身", work: "工作", jjp: "JJP", basketball: "籃球", meal: "用餐", rest: "休息", wake: "起床", speech: "語言治療", other: "其他",
+    sleep: "睡眠", travel: "旅遊", date: "約會", happen: "發生", reading: "閱讀", chilling: "放鬆",
     save: "保存", cancel: "取消", delete: "刪除", addEx: "新增動作", weight: "公斤", reps: "次數",
     logout: "登出", loading: "同步中...", w_call: "電話", w_research: "研究", w_search: "搜尋", 
     w_send: "發送", w_other: "其他", remarks: "備註 / 內容...", changeCat: "修改類別",
-    clearSlot: "清空時段"
+    clearSlot: "清空時段", selectionPrompt: "應用於所選時段"
   }
 };
 
@@ -93,15 +95,18 @@ export default function App() {
   const [allWorkouts, setAllWorkouts] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   
-  const [selection, setSelection] = useState(null);
+  // DRAG SELECTION STATE
+  const [selection, setSelection] = useState(null); // { dayKey, slots: [] }
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false); // Used for WORK, JJP, OTHER
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isGymModalOpen, setIsGymModalOpen] = useState(false);
   
   const [detailData, setDetailData] = useState({ type: 'WORK', subType: 'OTHER_WORK', remarks: '' });
   const [currentWorkout, setCurrentWorkout] = useState([]);
   
   const isDragging = useRef(false);
+  const dragStartSlot = useRef(null);
+
   const t = TRANSLATIONS[lang];
 
   const ACTIVITY_CONFIG = {
@@ -111,6 +116,12 @@ export default function App() {
     BASKETBALL: { color: 'bg-amber-500', text: 'text-white', icon: <Trophy size={14} />, label: t.basketball },
     SPEECH: { color: 'bg-emerald-500', text: 'text-white', icon: <MessageCircle size={14} />, label: t.speech },
     MEAL: { color: 'bg-red-500', text: 'text-white', icon: <Utensils size={14} />, label: t.meal },
+    SLEEP: { color: 'bg-slate-900', text: 'text-white', icon: <Moon size={14} />, label: t.sleep },
+    TRAVEL: { color: 'bg-sky-500', text: 'text-white', icon: <Plane size={14} />, label: t.travel },
+    DATE: { color: 'bg-rose-400', text: 'text-white', icon: <Heart size={14} />, label: t.date },
+    HAPPEN: { color: 'bg-indigo-400', text: 'text-white', icon: <Sparkles size={14} />, label: t.happen },
+    READING: { color: 'bg-emerald-700', text: 'text-white', icon: <BookOpen size={14} />, label: t.reading },
+    CHILLING: { color: 'bg-amber-800', text: 'text-white', icon: <Coffee size={14} />, label: t.chilling },
     REST: { color: 'bg-slate-700', text: 'text-white', icon: <Moon size={14} />, label: t.rest },
     WAKE: { color: 'bg-amber-100', text: 'text-amber-900', icon: <Sun size={14} />, label: t.wake },
     OTHER: { color: 'bg-slate-300', text: 'text-slate-800', icon: <Clock size={14} />, label: t.other }
@@ -159,10 +170,10 @@ export default function App() {
       setIsSlotModalOpen(false);
       setIsDetailModalOpen(false);
       setIsGymModalOpen(false);
+      setSelection(null);
       return;
     }
 
-    // Modal Trigger Logic
     if ((type === 'WORK' || type === 'JJP' || type === 'OTHER') && !payload) {
       const existing = events[`${dayKey}-${slots[0].toString().replace('.','_')}`];
       setDetailData({ 
@@ -183,7 +194,6 @@ export default function App() {
       return;
     }
 
-    // Saving Logic
     const baseData = { type, dayKey, timestamp: Date.now() };
     if (payload && typeof payload === 'object') {
       baseData.subType = payload.subType;
@@ -196,6 +206,7 @@ export default function App() {
     
     setIsSlotModalOpen(false);
     setIsDetailModalOpen(false);
+    setSelection(null);
   };
 
   const analytics = useMemo(() => {
@@ -216,11 +227,38 @@ export default function App() {
     });
   }, [selectedDate]);
 
+  // DRAG HANDLERS
+  const startDrag = (dayKey, slot) => {
+    isDragging.current = true;
+    dragStartSlot.current = slot;
+    setSelection({ dayKey, slots: [slot] });
+  };
+
+  const updateDrag = (dayKey, currentSlot) => {
+    if (!isDragging.current || selection?.dayKey !== dayKey) return;
+    
+    const start = Math.min(dragStartSlot.current, currentSlot);
+    const end = Math.max(dragStartSlot.current, currentSlot);
+    
+    const range = [];
+    for (let s = start; s <= end; s += 0.5) {
+      range.push(s);
+    }
+    setSelection({ dayKey, slots: range });
+  };
+
+  const endDrag = () => {
+    if (isDragging.current) {
+      setIsSlotModalOpen(true);
+    }
+    isDragging.current = false;
+    dragStartSlot.current = null;
+  };
+
   if (!user) return <div className="h-screen flex items-center justify-center bg-slate-50 font-black text-indigo-600 animate-pulse text-2xl tracking-tighter">{t.loading}</div>;
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans select-none overflow-hidden">
-      {/* Sidebar */}
+    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans select-none overflow-hidden" onMouseUp={endDrag}>
       <aside className="w-72 bg-white border-r border-slate-200 p-6 flex flex-col shrink-0 hidden md:flex">
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Activity size={24} /></div>
@@ -258,12 +296,10 @@ export default function App() {
                   <div className="p-4 border-r"></div>
                   {weekRange.map((date, i) => {
                     const dayKey = getDayKey(date);
-                    const hasWorkout = allWorkouts.some(w => w.id === dayKey);
                     return (
                       <div key={i} className={`p-2 md:p-4 text-center border-r last:border-r-0 relative ${dayKey === getDayKey(new Date()) ? 'bg-indigo-50/50 text-indigo-600' : ''}`}>
                         <div className="text-[8px] md:text-[10px]">{date.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { weekday: 'short' })}</div>
                         <div className="text-sm md:text-xl text-slate-900">{date.getDate()}</div>
-                        {hasWorkout && <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-indigo-400 rounded-full" />}
                       </div>
                     );
                   })}
@@ -275,24 +311,22 @@ export default function App() {
                       {weekRange.map((date, i) => {
                         const dayKey = getDayKey(date);
                         const event = events[`${dayKey}-${slot.toString().replace('.', '_')}`];
+                        const isSelected = selection?.dayKey === dayKey && selection?.slots.includes(slot);
                         const config = event ? ACTIVITY_CONFIG[event.type] : null;
+                        
                         return (
                           <div key={i} 
-                            onMouseDown={() => { isDragging.current = true; setSelection({ dayKey, slots: [slot] }); }}
-                            onMouseEnter={() => { if (isDragging.current && selection?.dayKey === dayKey) setSelection(p => ({...p, slots: [...new Set([...p.slots, slot])]})); }}
-                            onMouseUp={() => { if (isDragging.current) setIsSlotModalOpen(true); isDragging.current = false; }}
-                            onClick={() => {
-                              setSelection({ dayKey, slots: [slot] });
-                              if (event?.type === 'GYM') handleSlotAction('GYM');
-                              else if (['WORK', 'JJP', 'OTHER'].includes(event?.type)) handleSlotAction(event.type);
-                              else setIsSlotModalOpen(true);
-                            }}
-                            className="p-0.5 border-r border-slate-50 last:border-r-0 cursor-crosshair relative group">
+                            onMouseDown={() => startDrag(dayKey, slot)}
+                            onMouseEnter={() => updateDrag(dayKey, slot)}
+                            className={`p-0.5 border-r border-slate-50 last:border-r-0 cursor-crosshair relative transition-all ${isSelected ? 'bg-indigo-100/50' : ''}`}>
                             {config && (
                               <div className={`w-full h-full rounded-lg px-2 flex items-center gap-2 shadow-sm ${config.color} ${config.text} transition-all active:scale-95`}>
                                 {config.icon} <span className="text-[10px] font-black uppercase hidden md:inline truncate">{config.label}</span>
-                                {event.remarks && <div className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><FileText size={8} /></div>}
+                                {event.remarks && <div className="absolute top-0 right-0 p-1"><FileText size={8} /></div>}
                               </div>
+                            )}
+                            {isSelected && !config && (
+                              <div className="w-full h-full bg-indigo-500/20 rounded-lg animate-pulse border border-indigo-500/40" />
                             )}
                           </div>
                         );
@@ -315,7 +349,6 @@ export default function App() {
                   <div key={workout.id} className="bg-white p-6 rounded-[32px] border shadow-sm">
                     <div className="flex justify-between items-center mb-4 border-b pb-4">
                       <h4 className="font-black text-indigo-600 uppercase tracking-tighter">{workout.id}</h4>
-                      <button onClick={async () => await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'workouts', workout.id))} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {workout.exercises?.map((ex, idx) => (
@@ -351,7 +384,7 @@ export default function App() {
                        </div>
                     </div>
                  </div>
-                 <div className="space-y-4">
+                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                    {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => {
                      const hrs = analytics[key] || 0;
                      const total = Object.values(analytics).reduce((a,b)=>a+b, 0) || 1;
@@ -386,7 +419,7 @@ export default function App() {
                      </div>
                      <div>
                        <p className="text-[10px] font-black uppercase text-slate-400">{e.dayKey}</p>
-                       <p className={`text-xs font-black uppercase ${ACTIVITY_CONFIG[e.type]?.text.replace('text-', 'text-')}`}>
+                       <p className={`text-xs font-black uppercase ${ACTIVITY_CONFIG[e.type]?.text}`}>
                          {e.type} {e.subType ? `- ${t[WORK_TYPES.find(wt => wt.id === e.subType)?.label] || e.subType}` : ''}
                        </p>
                      </div>
@@ -402,12 +435,19 @@ export default function App() {
       {/* SLOT SELECTION MODAL */}
       {isSlotModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[40px] w-full max-w-sm p-8 shadow-2xl">
-            <h3 className="text-xl font-black mb-8 text-center uppercase tracking-widest text-slate-400">Select Activity</h3>
-            <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="bg-white rounded-[40px] w-full max-w-lg p-8 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div className="mb-6 text-center">
+              <h3 className="text-xl font-black uppercase tracking-widest text-slate-800">Select Activity</h3>
+              <p className="text-[9px] font-black text-indigo-500 uppercase mt-2">
+                {t.selectionPrompt}: {selection?.slots.length * 0.5} hours
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-3 mb-6">
               {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => (
-                <button key={key} onClick={() => handleSlotAction(key)} className={`flex flex-col items-center gap-2 p-5 rounded-[28px] ${cfg.color} ${cfg.text} hover:scale-105 transition-all shadow-lg`}>
-                   {cfg.icon} <span className="font-black text-[9px] uppercase tracking-widest">{cfg.label}</span>
+                <button key={key} onClick={() => handleSlotAction(key)} className={`flex flex-col items-center gap-2 p-4 rounded-[24px] ${cfg.color} ${cfg.text} hover:scale-105 transition-all shadow-md`}>
+                   <div className="scale-125">{cfg.icon}</div>
+                   <span className="font-black text-[8px] uppercase tracking-wider">{cfg.label}</span>
                 </button>
               ))}
             </div>
@@ -415,7 +455,7 @@ export default function App() {
             <button onClick={() => handleSlotAction('DELETE')} className="w-full flex items-center justify-center gap-2 py-4 bg-red-50 text-red-500 rounded-2xl font-black uppercase text-[10px] hover:bg-red-100 transition-colors mb-2">
               <Trash2 size={14}/> {t.clearSlot}
             </button>
-            <button onClick={() => setIsSlotModalOpen(false)} className="w-full py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px] hover:bg-slate-200 transition-colors">{t.cancel}</button>
+            <button onClick={() => { setIsSlotModalOpen(false); setSelection(null); }} className="w-full py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px] hover:bg-slate-200 transition-colors">{t.cancel}</button>
           </div>
         </div>
       )}
@@ -432,7 +472,6 @@ export default function App() {
                </div>
             </div>
             
-            {/* Show Sub-types only for WORK */}
             {detailData.type === 'WORK' && (
               <div className="grid grid-cols-3 gap-2 mb-6">
                 {WORK_TYPES.map(wt => (
@@ -447,10 +486,10 @@ export default function App() {
               value={detailData.remarks} 
               onChange={e => setDetailData({...detailData, remarks: e.target.value})}
               placeholder={t.remarks}
-              className={`w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm font-medium border-0 focus:ring-2 focus:ring-${detailData.type === 'WORK' ? 'orange' : detailData.type === 'JJP' ? 'purple' : 'slate'}-500 mb-6 resize-none`}
+              className="w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm font-medium border-0 focus:ring-2 focus:ring-indigo-500 mb-6 resize-none"
             />
             <div className="flex gap-3">
-              <button onClick={() => setIsDetailModalOpen(false)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px]">{t.cancel}</button>
+              <button onClick={() => { setIsDetailModalOpen(false); setSelection(null); }} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px]">{t.cancel}</button>
               <button onClick={() => handleSlotAction(detailData.type, detailData)} className={`flex-[2] py-4 ${ACTIVITY_CONFIG[detailData.type]?.color} text-white rounded-2xl font-black shadow-lg uppercase text-[10px]`}>{t.save}</button>
             </div>
           </div>
@@ -466,7 +505,7 @@ export default function App() {
                 <h3 className="text-2xl font-black flex items-center gap-2"><Dumbbell className="text-indigo-600"/> {t.gymProgress}</h3>
                 <button onClick={() => setIsSlotModalOpen(true)} className="px-4 py-2 bg-slate-100 rounded-xl text-[10px] font-black text-slate-500 uppercase">{t.changeCat}</button>
               </div>
-              <button onClick={() => setIsGymModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X/></button>
+              <button onClick={() => { setIsGymModalOpen(false); setSelection(null); }} className="p-2 hover:bg-slate-100 rounded-full"><X/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {currentWorkout.map((ex, exIdx) => (
