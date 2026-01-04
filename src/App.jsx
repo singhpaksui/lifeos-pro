@@ -20,7 +20,7 @@ import {
   Calendar, Clock, Trash2, ChevronLeft, ChevronRight,
   Briefcase, Dumbbell, Utensils, Moon, Sun, Search, Send, Microscope, ListPlus, 
   TrendingUp, Activity, X, Phone, Languages, LogOut, MessageCircle, BarChart3, PieChart, FileText,
-  Target, Trophy, Plane, Heart, Sparkles, BookOpen, Coffee
+  Target, Trophy, Plane, Heart, Sparkles, BookOpen, Coffee, Car, Bath, Landmark, Film
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -48,8 +48,8 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'lifeos-pro-v3';
 const TRANSLATIONS = {
   en: {
     planner: "Planner", gymProgress: "Gym Progress", workDoc: "Activity Log", timeAnalytics: "Time Analytics",
-    gym: "GYM", work: "WORK", jjp: "JJP", basketball: "B-BALL", meal: "MEAL", rest: "REST", wake: "WAKE", speech: "SPEECH", other: "OTHER",
-    sleep: "SLEEP", travel: "TRAVEL", date: "DATE", happen: "HAPPEN", reading: "READ", chilling: "CHILL",
+    gym: "GYM", work: "WORK", commute: "COMMUTE", shower: "SHOWER", meal: "MEAL", rest: "REST", wake: "WAKE", speech: "SPEECH", other: "OTHER",
+    sleep: "SLEEP", travel: "TRAVEL", date: "DATE", happen: "HAPPEN", reading: "READ", movies: "MOVIES", chilling: "CHILL", gurdwara: "GURDWARA",
     save: "Save", cancel: "Cancel", delete: "Delete", addEx: "Add Exercise", weight: "kg", reps: "reps",
     logout: "Log Out", loading: "Syncing LifeOS...", w_call: "Call", w_research: "Research", w_search: "Search", 
     w_send: "Send Out", w_other: "Others", remarks: "Remarks / Notes...", changeCat: "Change Category",
@@ -57,8 +57,8 @@ const TRANSLATIONS = {
   },
   zh: {
     planner: "日程規劃", gymProgress: "健身進度", workDoc: "活動日誌", timeAnalytics: "時間分析",
-    gym: "健身", work: "工作", jjp: "JJP", basketball: "籃球", meal: "用餐", rest: "休息", wake: "起床", speech: "語言治療", other: "其他",
-    sleep: "睡眠", travel: "旅遊", date: "約會", happen: "發生", reading: "閱讀", chilling: "放鬆",
+    gym: "健身", work: "工作", commute: "通勤", shower: "洗澡", meal: "用餐", rest: "休息", wake: "起床", speech: "語言治療", other: "其他",
+    sleep: "睡眠", travel: "旅遊", date: "約會", happen: "發生", reading: "閱讀", movies: "電影", chilling: "放鬆", gurdwara: "錫克廟",
     save: "保存", cancel: "取消", delete: "刪除", addEx: "新增動作", weight: "公斤", reps: "次數",
     logout: "登出", loading: "同步中...", w_call: "電話", w_research: "研究", w_search: "搜尋", 
     w_send: "發送", w_other: "其他", remarks: "備註 / 內容...", changeCat: "修改類別",
@@ -94,9 +94,10 @@ export default function App() {
   const [events, setEvents] = useState({});
   const [allWorkouts, setAllWorkouts] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [analyticsView, setAnalyticsView] = useState('weekly'); // 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'
   
   // DRAG SELECTION STATE
-  const [selection, setSelection] = useState(null); // { dayKey, slots: [] }
+  const [selection, setSelection] = useState(null); 
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isGymModalOpen, setIsGymModalOpen] = useState(false);
@@ -111,9 +112,11 @@ export default function App() {
 
   const ACTIVITY_CONFIG = {
     WORK: { color: 'bg-orange-500', text: 'text-white', icon: <Briefcase size={14} />, label: t.work },
-    JJP: { color: 'bg-purple-600', text: 'text-white', icon: <Target size={14} />, label: t.jjp },
     GYM: { color: 'bg-indigo-600', text: 'text-white', icon: <Dumbbell size={14} />, label: t.gym },
-    BASKETBALL: { color: 'bg-amber-500', text: 'text-white', icon: <Trophy size={14} />, label: t.basketball },
+    COMMUTE: { color: 'bg-slate-500', text: 'text-white', icon: <Car size={14} />, label: t.commute },
+    SHOWER: { color: 'bg-blue-400', text: 'text-white', icon: <Bath size={14} />, label: t.shower },
+    GURDWARA: { color: 'bg-amber-600', text: 'text-white', icon: <Landmark size={14} />, label: t.gurdwara },
+    MOVIES: { color: 'bg-red-700', text: 'text-white', icon: <Film size={14} />, label: t.movies },
     SPEECH: { color: 'bg-emerald-500', text: 'text-white', icon: <MessageCircle size={14} />, label: t.speech },
     MEAL: { color: 'bg-red-500', text: 'text-white', icon: <Utensils size={14} />, label: t.meal },
     SLEEP: { color: 'bg-slate-900', text: 'text-white', icon: <Moon size={14} />, label: t.sleep },
@@ -174,7 +177,10 @@ export default function App() {
       return;
     }
 
-    if ((type === 'WORK' || type === 'JJP' || type === 'OTHER') && !payload) {
+    // Modal logic for specific labels: WORK, OTHER, MOVIES, READING
+    const needsRemarks = ['WORK', 'OTHER', 'MOVIES', 'READING'].includes(type);
+
+    if (needsRemarks && !payload) {
       const existing = events[`${dayKey}-${slots[0].toString().replace('.','_')}`];
       setDetailData({ 
         type: type,
@@ -211,11 +217,35 @@ export default function App() {
 
   const analytics = useMemo(() => {
     const totals = {};
+    const now = new Date();
+    
     Object.values(events).forEach(ev => {
-      totals[ev.type] = (totals[ev.type] || 0) + 0.5;
+      const evDate = new Date(ev.dayKey);
+      let include = false;
+
+      if (analyticsView === 'daily') {
+        include = ev.dayKey === getDayKey(now);
+      } else if (analyticsView === 'weekly') {
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+        startOfWeek.setHours(0,0,0,0);
+        include = evDate >= startOfWeek;
+      } else if (analyticsView === 'monthly') {
+        include = evDate.getMonth() === now.getMonth() && evDate.getFullYear() === now.getFullYear();
+      } else if (analyticsView === 'quarterly') {
+        const currentQuarter = Math.floor(now.getMonth() / 3);
+        const evQuarter = Math.floor(evDate.getMonth() / 3);
+        include = currentQuarter === evQuarter && evDate.getFullYear() === now.getFullYear();
+      } else if (analyticsView === 'yearly') {
+        include = evDate.getFullYear() === now.getFullYear();
+      }
+
+      if (include) {
+        totals[ev.type] = (totals[ev.type] || 0) + 0.5;
+      }
     });
     return totals;
-  }, [events]);
+  }, [events, analyticsView]);
 
   const weekRange = useMemo(() => {
     const start = new Date(selectedDate);
@@ -236,10 +266,8 @@ export default function App() {
 
   const updateDrag = (dayKey, currentSlot) => {
     if (!isDragging.current || selection?.dayKey !== dayKey) return;
-    
     const start = Math.min(dragStartSlot.current, currentSlot);
     const end = Math.max(dragStartSlot.current, currentSlot);
-    
     const range = [];
     for (let s = start; s <= end; s += 0.5) {
       range.push(s);
@@ -248,9 +276,7 @@ export default function App() {
   };
 
   const endDrag = () => {
-    if (isDragging.current) {
-      setIsSlotModalOpen(true);
-    }
+    if (isDragging.current) setIsSlotModalOpen(true);
     isDragging.current = false;
     dragStartSlot.current = null;
   };
@@ -273,6 +299,22 @@ export default function App() {
           <button onClick={() => setActiveTab('analytics')} className={`flex items-center gap-3 w-full p-4 rounded-2xl transition-all ${activeTab === 'analytics' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-100'}`}><PieChart size={18}/> <span className="font-bold">{t.timeAnalytics}</span></button>
           <button onClick={() => setActiveTab('gym-progress')} className={`flex items-center gap-3 w-full p-4 rounded-2xl transition-all ${activeTab === 'gym-progress' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-100'}`}><TrendingUp size={18}/> <span className="font-bold">{t.gymProgress}</span></button>
         </nav>
+        
+        {activeTab === 'analytics' && (
+          <div className="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase ml-1">View Scope</p>
+            {['daily', 'weekly', 'monthly', 'quarterly', 'yearly'].map(scope => (
+              <button 
+                key={scope} 
+                onClick={() => setAnalyticsView(scope)}
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold capitalize transition-all ${analyticsView === scope ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-white'}`}
+              >
+                {scope}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="pt-6 border-t space-y-2">
            <button onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')} className="w-full p-4 text-[10px] font-black uppercase text-slate-400 hover:text-indigo-600 flex items-center justify-center gap-2"><Languages size={14}/> {lang === 'en' ? '中文' : 'English'}</button>
            <button onClick={() => signOut(auth)} className="w-full p-4 text-[10px] font-black uppercase text-slate-400 hover:text-red-500 flex items-center justify-center gap-2"><LogOut size={14}/> {t.logout}</button>
@@ -373,7 +415,24 @@ export default function App() {
 
           {activeTab === 'analytics' && (
             <div className="max-w-4xl mx-auto space-y-6">
-               <h3 className="text-2xl font-black mb-8">Overall Time Distribution</h3>
+               <div className="flex justify-between items-end mb-8">
+                 <div>
+                  <h3 className="text-2xl font-black">Time Distribution</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{analyticsView} stats</p>
+                 </div>
+                 {/* Mobile Scope Select */}
+                 <select 
+                   value={analyticsView} 
+                   onChange={(e) => setAnalyticsView(e.target.value)}
+                   className="md:hidden p-2 bg-white border rounded-xl text-xs font-black uppercase"
+                 >
+                   <option value="daily">Daily</option>
+                   <option value="weekly">Weekly</option>
+                   <option value="monthly">Monthly</option>
+                   <option value="quarterly">Quarterly</option>
+                   <option value="yearly">Yearly</option>
+                 </select>
+               </div>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <div className="bg-white p-8 rounded-[40px] border shadow-sm flex items-center justify-center">
                     <div className="relative w-48 h-48 rounded-full border-[16px] border-slate-100 flex items-center justify-center">
@@ -389,6 +448,7 @@ export default function App() {
                      const hrs = analytics[key] || 0;
                      const total = Object.values(analytics).reduce((a,b)=>a+b, 0) || 1;
                      const pct = Math.round((hrs / total) * 100);
+                     if (hrs === 0) return null;
                      return (
                        <div key={key} className="bg-white p-4 rounded-2xl border flex items-center gap-4">
                          <div className={`w-10 h-10 rounded-xl ${cfg.color} flex items-center justify-center text-white`}>{cfg.icon}</div>
@@ -420,7 +480,7 @@ export default function App() {
                      <div>
                        <p className="text-[10px] font-black uppercase text-slate-400">{e.dayKey}</p>
                        <p className={`text-xs font-black uppercase ${ACTIVITY_CONFIG[e.type]?.text}`}>
-                         {e.type} {e.subType ? `- ${t[WORK_TYPES.find(wt => wt.id === e.subType)?.label] || e.subType}` : ''}
+                         {e.type} {e.subType && e.type === 'WORK' ? `- ${t[WORK_TYPES.find(wt => wt.id === e.subType)?.label] || e.subType}` : ''}
                        </p>
                      </div>
                    </div>
@@ -460,7 +520,7 @@ export default function App() {
         </div>
       )}
 
-      {/* DETAIL MODAL (WORK, JJP, OTHER) */}
+      {/* DETAIL MODAL (WORK, MOVIES, READING, OTHER) */}
       {isDetailModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[40px] w-full max-w-md p-8 shadow-2xl">
