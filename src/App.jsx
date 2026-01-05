@@ -20,7 +20,7 @@ import {
   Calendar, Clock, Trash2, ChevronLeft, ChevronRight,
   Briefcase, Dumbbell, Utensils, Moon, Sun, Search, Send, Microscope, ListPlus, 
   TrendingUp, Activity, X, Phone, Languages, LogOut, MessageCircle, BarChart3, PieChart, FileText,
-  Target, Trophy, Plane, Heart, Sparkles, BookOpen, Coffee, Car, Bath, Landmark, Film
+  Target, Trophy, Plane, Heart, Sparkles, BookOpen, Coffee, Car, Bath, Landmark, Film, Terminal
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -49,7 +49,8 @@ const TRANSLATIONS = {
   en: {
     planner: "Planner", gymProgress: "Gym Progress", workDoc: "Activity Log", timeAnalytics: "Time Analytics",
     gym: "GYM", work: "WORK", commute: "COMMUTE", shower: "SHOWER", meal: "MEAL", rest: "REST", wake: "WAKE", speech: "SPEECH", other: "OTHER",
-    sleep: "SLEEP", travel: "TRAVEL", date: "DATE", happen: "HAPPEN", reading: "READ", movies: "MOVIES", chilling: "CHILL", gurdwara: "GURDWARA",
+    sleep: "SLEEP", travel: "TRAVEL", date: "DATE", reading: "READ", movies: "MOVIES", chilling: "CHILL", gurdwara: "GURDWARA",
+    happen: "HAPPEN", vibecoding: "VIBE-CODE",
     save: "Save", cancel: "Cancel", delete: "Delete", addEx: "Add Exercise", weight: "kg", reps: "reps",
     logout: "Log Out", loading: "Syncing LifeOS...", w_call: "Call", w_research: "Research", w_search: "Search", 
     w_send: "Send Out", w_other: "Others", remarks: "Remarks / Notes...", changeCat: "Change Category",
@@ -58,7 +59,8 @@ const TRANSLATIONS = {
   zh: {
     planner: "日程規劃", gymProgress: "健身進度", workDoc: "活動日誌", timeAnalytics: "時間分析",
     gym: "健身", work: "工作", commute: "通勤", shower: "洗澡", meal: "用餐", rest: "休息", wake: "起床", speech: "語言治療", other: "其他",
-    sleep: "睡眠", travel: "旅遊", date: "約會", happen: "發生", reading: "閱讀", movies: "電影", chilling: "放鬆", gurdwara: "錫克廟",
+    sleep: "睡眠", travel: "旅遊", date: "約會", reading: "閱讀", movies: "電影", chilling: "放鬆", gurdwara: "錫克廟",
+    happen: "發生", vibecoding: "編碼",
     save: "保存", cancel: "取消", delete: "刪除", addEx: "新增動作", weight: "公斤", reps: "次數",
     logout: "登出", loading: "同步中...", w_call: "電話", w_research: "研究", w_search: "搜尋", 
     w_send: "發送", w_other: "其他", remarks: "備註 / 內容...", changeCat: "修改類別",
@@ -94,9 +96,8 @@ export default function App() {
   const [events, setEvents] = useState({});
   const [allWorkouts, setAllWorkouts] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [analyticsView, setAnalyticsView] = useState('weekly'); // 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'
+  const [analyticsView, setAnalyticsView] = useState('weekly');
   
-  // DRAG SELECTION STATE
   const [selection, setSelection] = useState(null); 
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -113,6 +114,7 @@ export default function App() {
   const ACTIVITY_CONFIG = {
     WORK: { color: 'bg-orange-500', text: 'text-white', icon: <Briefcase size={14} />, label: t.work },
     GYM: { color: 'bg-indigo-600', text: 'text-white', icon: <Dumbbell size={14} />, label: t.gym },
+    VIBE_CODING: { color: 'bg-violet-600', text: 'text-white', icon: <Terminal size={14} />, label: t.vibecoding },
     COMMUTE: { color: 'bg-slate-500', text: 'text-white', icon: <Car size={14} />, label: t.commute },
     SHOWER: { color: 'bg-blue-400', text: 'text-white', icon: <Bath size={14} />, label: t.shower },
     GURDWARA: { color: 'bg-amber-600', text: 'text-white', icon: <Landmark size={14} />, label: t.gurdwara },
@@ -150,14 +152,14 @@ export default function App() {
       const data = {};
       snap.forEach(d => data[d.id] = d.data());
       setEvents(data);
-    }, (err) => console.error("Event Sync Error:", err));
+    });
 
     const workoutsPath = collection(db, 'artifacts', appId, 'users', user.uid, 'workouts');
     const unsubWorkouts = onSnapshot(workoutsPath, (snap) => {
       const list = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() }));
       setAllWorkouts(list.sort((a, b) => b.date.localeCompare(a.date)));
-    }, (err) => console.error("Workout Sync Error:", err));
+    });
 
     return () => { unsubEvents(); unsubWorkouts(); };
   }, [user]);
@@ -177,8 +179,7 @@ export default function App() {
       return;
     }
 
-    // Modal logic for specific labels: WORK, OTHER, MOVIES, READING
-    const needsRemarks = ['WORK', 'OTHER', 'MOVIES', 'READING'].includes(type);
+    const needsRemarks = ['WORK', 'OTHER', 'MOVIES', 'READING', 'HAPPEN', 'VIBE_CODING'].includes(type);
 
     if (needsRemarks && !payload) {
       const existing = events[`${dayKey}-${slots[0].toString().replace('.','_')}`];
@@ -257,7 +258,6 @@ export default function App() {
     });
   }, [selectedDate]);
 
-  // DRAG HANDLERS
   const startDrag = (dayKey, slot) => {
     isDragging.current = true;
     dragStartSlot.current = slot;
@@ -328,7 +328,6 @@ export default function App() {
              <h2 className="text-sm md:text-lg font-black">{selectedDate.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { month: 'long', year: 'numeric' })}</h2>
              <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()+7); setSelectedDate(d); }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight size={20}/></button>
           </div>
-          <div className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-500">ID: {user.uid.slice(0,6)}...</div>
         </header>
 
         <div className="flex-1 overflow-auto p-4 md:p-8">
@@ -420,7 +419,6 @@ export default function App() {
                   <h3 className="text-2xl font-black">Time Distribution</h3>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{analyticsView} stats</p>
                  </div>
-                 {/* Mobile Scope Select */}
                  <select 
                    value={analyticsView} 
                    onChange={(e) => setAnalyticsView(e.target.value)}
@@ -520,7 +518,7 @@ export default function App() {
         </div>
       )}
 
-      {/* DETAIL MODAL (WORK, MOVIES, READING, OTHER) */}
+      {/* DETAIL MODAL (WORK, MOVIES, READING, HAPPEN, VIBE_CODING, OTHER) */}
       {isDetailModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[40px] w-full max-w-md p-8 shadow-2xl">
@@ -556,7 +554,7 @@ export default function App() {
         </div>
       )}
 
-      {/* DETAILED GYM MODAL */}
+      {/* GYM MODAL */}
       {isGymModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
           <div className="bg-slate-50 rounded-[40px] w-full max-w-2xl h-[80vh] flex flex-col shadow-2xl overflow-hidden">
@@ -596,7 +594,7 @@ export default function App() {
                  await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'workouts', selection.dayKey), { exercises: currentWorkout, date: selection.dayKey }); 
                  await handleSlotAction('GYM', true);
                  setIsGymModalOpen(false); 
-               }} className="flex-1 py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest">{t.save}</button>
+               }} className="flex-1 py-5 bg-indigo-600 text-white rounded-3xl font-black shadow-lg uppercase text-[10px]">{t.save}</button>
             </div>
           </div>
         </div>

@@ -1,0 +1,346 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
+import { 
+  getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, query 
+} from 'firebase/firestore';
+import { 
+  Calendar, Layout, Briefcase, Dumbbell, Utensils, Moon, Sun, Clock, Trash2, 
+  ChevronLeft, ChevronRight, PieChart, TrendingUp, Activity, LogOut, AlertCircle, CheckCircle2
+} from 'lucide-react';
+
+// --- CONFIGURATION ---
+const getSystemGlobals = () => {
+  const appId = typeof window !== 'undefined' && window.__app_id ? window.__app_id : 'lifeos-pro-v2';
+  const envConfig = typeof window !== 'undefined' && window.__firebase_config ? JSON.parse(window.__firebase_config) : null;
+  return { appId, envConfig };
+};
+
+const { appId, envConfig } = getSystemGlobals();
+
+// Initialize Firebase only if config exists
+const app = envConfig ? initializeApp(envConfig) : null;
+const auth = app ? getAuth(app) : null;
+const db = app ? getFirestore(app) : null;
+
+const TRANSLATIONS = {
+  en: {
+    planner: "Planner",
+    gymProgress: "Gym Progress",
+    workMetrics: "Work Metrics",
+    utilization: "Time Utilization",
+    login: "Log In",
+    signup: "Sign Up",
+    email: "Email Address",
+    password: "Password",
+    logout: "Log Out",
+    cancel: "Cancel",
+    gym: "GYM", work: "WORK", meal: "MEAL", rest: "REST", wake: "WAKE", other: "OTHER"
+  }
+};
+
+const SLOTS = Array.from({ length: 48 }, (_, i) => i * 0.5);
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [lang, setLang] = useState('en');
+  const [activeTab, setActiveTab] = useState('planner');
+  const [events, setEvents] = useState({});
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  
+  // Auth State
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
+  const [selection, setSelection] = useState(null);
+  
+  const t = TRANSLATIONS[lang];
+  const isDragging = useRef(false);
+
+  const ACTIVITY_CONFIG = {
+    GYM: { color: 'bg-indigo-600', text: 'text-white', icon: <Dumbbell size={14} />, label: t.gym },
+    HH: { color: 'bg-orange-500', text: 'text-white', icon: <Briefcase size={14} />, label: t.work },
+    MEAL: { color: 'bg-red-500', text: 'text-white', icon: <Utensils size={14} />, label: t.meal },
+    REST: { color: 'bg-slate-700', text: 'text-white', icon: <Moon size={14} />, label: t.rest },
+    WAKE: { color: 'bg-amber-100', text: 'text-amber-900', icon: <Sun size={14} />, label: t.wake },
+    OTHER: { color: 'bg-slate-200', text: 'text-gray-600', icon: <Clock size={14} />, label: t.other }
+  };
+
+  useEffect(() => {
+    if (!auth) return;
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  useEffect(() => {
+    if (!user || !db) return;
+    const q = collection(db, 'artifacts', appId, 'users', user.uid, 'events');
+    return onSnapshot(q, (snap) => {
+      const data = {};
+      snap.forEach(d => data[d.id] = d.data());
+      setEvents(data);
+    }, (err) => console.error("Firestore Error:", err));
+  }, [user]);
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!auth) {
+      setAuthError("Firebase is not initialized. Check your environment configuration.");
+      return;
+    }
+    try {
+      if (isLoginMode) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err) {
+      if (err.code === 'auth/operation-not-allowed') {
+        setAuthError("Email/Password login is not enabled in Firebase Console. Go to Authentication > Sign-in method to enable it.");
+      } else {
+        setAuthError(err.message);
+      }
+    }
+  };
+
+  const getDayKey = (date) => date.toISOString().split('T')[0];
+  const getEventId = (dayKey, slot) => `${dayKey}-${slot.toString().replace('.', '_')}`;
+
+  const weekRange = useMemo(() => {
+    const start = new Date(selectedDate);
+    start.setDate(selectedDate.getDate() - selectedDate.getDay());
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  }, [selectedDate]);
+
+  const handleSlotAction = async (type) => {
+    if (!selection || !user || !db) return;
+    const { dayKey, slots } = selection;
+    
+    if (type === 'DELETE') {
+      const deletes = slots.map(s => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'events', getEventId(dayKey, s))));
+      await Promise.all(deletes);
+      setIsSlotModalOpen(false);
+      return;
+    }
+
+    const updates = slots.map(slot => setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'events', getEventId(dayKey, slot)), {
+      type, slot, dayKey, userId: user.uid, timestamp: Date.now()
+    }));
+    await Promise.all(updates);
+    setIsSlotModalOpen(false);
+  };
+
+  const utilizationStats = useMemo(() => {
+    const stats = { day: {}, week: {}, month: {} };
+    const today = getDayKey(new Date());
+    const monthPrefix = today.substring(0, 7);
+
+    Object.values(events).forEach(ev => {
+      const hours = 0.5;
+      if (ev.dayKey === today) stats.day[ev.type] = (stats.day[ev.type] || 0) + hours;
+      if (weekRange.some(d => getDayKey(d) === ev.dayKey)) stats.week[ev.type] = (stats.week[ev.type] || 0) + hours;
+      if (ev.dayKey.startsWith(monthPrefix)) stats.month[ev.type] = (stats.month[ev.type] || 0) + hours;
+    });
+    return stats;
+  }, [events, weekRange]);
+
+  if (!envConfig) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full space-y-6">
+          <div className="bg-red-500/10 border border-red-500/50 p-6 rounded-3xl">
+            <h1 className="text-xl font-bold flex items-center gap-2 mb-2 text-red-400"><AlertCircle /> Configuration Missing</h1>
+            <p className="text-sm opacity-80">The Firebase configuration was not found in the environment. Please ensure you have deployed via the provided terminal steps.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="bg-white w-full max-w-md rounded-[48px] shadow-2xl p-10 border border-slate-100">
+          <div className="flex flex-col items-center mb-8 text-center">
+             <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mb-4"><Layout size={32}/></div>
+             <h1 className="text-3xl font-black">LifeOS Pro</h1>
+             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">Personal Management System</p>
+          </div>
+          
+          <form onSubmit={handleAuth} className="space-y-4">
+            <input type="email" placeholder={t.email} className="w-full p-4 bg-slate-50 rounded-2xl border-0 focus:ring-2 focus:ring-indigo-600 font-bold" value={email} onChange={e => setEmail(e.target.value)} required />
+            <input type="password" placeholder={t.password} className="w-full p-4 bg-slate-50 rounded-2xl border-0 focus:ring-2 focus:ring-indigo-600 font-bold" value={password} onChange={e => setPassword(e.target.value)} required />
+            
+            {authError && (
+              <div className="p-4 bg-red-50 rounded-xl border border-red-100">
+                <p className="text-red-600 text-[11px] font-bold leading-relaxed flex gap-2">
+                  <AlertCircle size={14} className="shrink-0" /> {authError}
+                </p>
+              </div>
+            )}
+
+            <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all">
+              {isLoginMode ? t.login : t.signup}
+            </button>
+          </form>
+
+          <button onClick={() => setIsLoginMode(!isLoginMode)} className="w-full mt-6 text-slate-400 font-bold text-xs uppercase tracking-tighter">
+            {isLoginMode ? "Need an account? Sign Up" : "Have an account? Log In"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-72 bg-white border-r p-6 flex flex-col hidden lg:flex shrink-0">
+        <div className="flex items-center gap-3 mb-10">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white"><Layout size={24} /></div>
+          <h1 className="text-xl font-black">LifeOS</h1>
+        </div>
+        <nav className="space-y-1 flex-1">
+          {[
+            { id: 'planner', icon: <Calendar size={18}/>, label: t.planner },
+            { id: 'utilization', icon: <PieChart size={18}/>, label: t.utilization },
+            { id: 'gym-progress', icon: <TrendingUp size={18}/>, label: t.gymProgress },
+            { id: 'work-analytics', icon: <Activity size={18}/>, label: t.workMetrics }
+          ].map(item => (
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex items-center gap-3 w-full p-4 rounded-2xl font-bold text-sm transition-all ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100' : 'text-slate-500 hover:bg-slate-100'}`}>
+              {item.icon} {item.label}
+            </button>
+          ))}
+        </nav>
+        <div className="mt-auto pt-6 border-t">
+          <button onClick={() => signOut(auth)} className="flex items-center gap-2 p-4 text-slate-400 font-black text-[10px] uppercase hover:text-red-500 transition-colors w-full">
+            <LogOut size={14}/> {t.logout}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="bg-white border-b px-8 py-5 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-4">
+            <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()-7); setSelectedDate(d); }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft size={20}/></button>
+            <h2 className="text-lg font-black">{selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2>
+            <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()+7); setSelectedDate(d); }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight size={20}/></button>
+          </div>
+          <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-full border">
+            Cloud Connected <CheckCircle2 size={10} className="inline text-green-500 ml-1" />
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-auto p-8">
+          {activeTab === 'planner' && (
+             <div className="bg-white rounded-[40px] shadow-sm border overflow-hidden">
+                <div className="grid grid-cols-8 border-b bg-slate-50/50">
+                  <div className="p-4 border-r"></div>
+                  {weekRange.map((date, i) => (
+                    <div key={i} className={`p-4 text-center border-r last:border-r-0 ${getDayKey(date) === getDayKey(new Date()) ? 'bg-indigo-50/50' : ''}`}>
+                      <p className="text-[10px] font-black text-slate-400 uppercase">{date.toLocaleDateString('en-US', { weekday: 'short' })}</p>
+                      <p className="text-2xl font-black">{date.getDate()}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="h-[calc(100vh-280px)] overflow-y-auto">
+                  {SLOTS.map(slot => (
+                    <div key={slot} className="grid grid-cols-8 border-b border-slate-50 min-h-[48px]">
+                      <div className="p-2 text-right border-r text-[9px] font-bold text-slate-300 flex items-center justify-end">
+                        {slot % 1 === 0 ? `${Math.floor(slot)}:00` : ''}
+                      </div>
+                      {weekRange.map((date, i) => {
+                        const dayKey = getDayKey(date);
+                        const eventId = getEventId(dayKey, slot);
+                        const event = events[eventId];
+                        const cfg = event ? ACTIVITY_CONFIG[event.type] : null;
+                        const isSelected = selection?.dayKey === dayKey && selection.slots.includes(slot);
+                        
+                        return (
+                          <div key={i} 
+                            onMouseDown={() => { isDragging.current = true; setSelection({ dayKey, slots: [slot] }); }}
+                            onMouseEnter={() => { if (isDragging.current && selection?.dayKey === dayKey) setSelection(p => ({...p, slots: [...new Set([...p.slots, slot])]})); }}
+                            onMouseUp={() => { if (isDragging.current) setIsSlotModalOpen(true); isDragging.current = false; }}
+                            className={`p-0.5 border-r border-slate-50 last:border-r-0 cursor-crosshair relative ${isSelected ? 'bg-indigo-50' : ''}`}>
+                            {cfg && (
+                              <div className={`w-full h-full rounded-lg p-2 flex items-center gap-2 ${cfg.color} ${cfg.text} shadow-sm text-[10px] font-black uppercase`}>
+                                {cfg.icon} <span className="truncate">{cfg.label}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+             </div>
+          )}
+
+          {activeTab === 'utilization' && (
+            <div className="max-w-5xl mx-auto space-y-8 pb-20">
+              <h3 className="text-3xl font-black">Time Utilization</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {['day', 'week', 'month'].map(period => (
+                  <div key={period} className="bg-white p-8 rounded-[40px] border shadow-sm">
+                    <h4 className="text-xs font-black uppercase text-indigo-600 mb-6 tracking-widest">{period}ly Allocation</h4>
+                    <div className="space-y-6">
+                      {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => {
+                        const val = utilizationStats[period][key] || 0;
+                        const total = Object.values(utilizationStats[period]).reduce((a, b) => a + b, 0) || 1;
+                        const pct = (val / total) * 100;
+                        return (
+                          <div key={key}>
+                            <div className="flex justify-between text-[10px] font-black mb-2">
+                              <span className="uppercase text-slate-500">{cfg.label}</span>
+                              <span className="text-indigo-600">{val}h</span>
+                            </div>
+                            <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`h-full ${cfg.color} transition-all duration-500`} style={{ width: `${pct}%` }}></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Assignment Modal */}
+      {isSlotModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-4">
+          <div className="bg-white rounded-[48px] w-full max-w-sm p-10 shadow-2xl">
+            <div className="flex justify-between mb-8">
+              <h3 className="text-xl font-black">Assign Time</h3>
+              <button onClick={() => handleSlotAction('DELETE')} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors"><Trash2/></button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => (
+                <button key={key} onClick={() => handleSlotAction(key)} className={`flex flex-col items-center gap-3 p-6 rounded-[32px] ${cfg.color} ${cfg.text} hover:scale-105 transition-all shadow-lg`}>
+                  {cfg.icon} <span className="text-[10px] font-black uppercase">{cfg.label}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setIsSlotModalOpen(false)} className="w-full mt-8 py-4 bg-slate-50 text-slate-400 font-black rounded-2xl uppercase text-[10px]">{t.cancel}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
