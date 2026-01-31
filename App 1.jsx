@@ -20,7 +20,7 @@ import {
   Calendar, Clock, Trash2, ChevronLeft, ChevronRight,
   Briefcase, Dumbbell, Utensils, Moon, Sun, Search, Send, Microscope, ListPlus, 
   TrendingUp, Activity, X, Phone, Languages, LogOut, MessageCircle, BarChart3, PieChart, FileText,
-  Target, Trophy, Plane, Heart, Sparkles, BookOpen, Coffee, Car, Bath, Landmark, Film, Terminal, Plus
+  Target, Trophy, Plane, Heart, Sparkles, BookOpen, Coffee, Car, Bath, Landmark, Film, Terminal
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -152,14 +152,14 @@ export default function App() {
       const data = {};
       snap.forEach(d => data[d.id] = d.data());
       setEvents(data);
-    }, (err) => console.error("Event Sync Error", err));
+    });
 
     const workoutsPath = collection(db, 'artifacts', appId, 'users', user.uid, 'workouts');
     const unsubWorkouts = onSnapshot(workoutsPath, (snap) => {
       const list = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() }));
       setAllWorkouts(list.sort((a, b) => b.date.localeCompare(a.date)));
-    }, (err) => console.error("Workout Sync Error", err));
+    });
 
     return () => { unsubEvents(); unsubWorkouts(); };
   }, [user]);
@@ -214,18 +214,6 @@ export default function App() {
     setIsSlotModalOpen(false);
     setIsDetailModalOpen(false);
     setSelection(null);
-  };
-
-  const handleSaveWorkout = async () => {
-    if (!user || !selection) return;
-    const { dayKey } = selection;
-    await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'workouts', dayKey), {
-      date: dayKey,
-      exercises: currentWorkout,
-      updatedAt: Date.now()
-    });
-    handleSlotAction('GYM', { isWorkout: true });
-    setIsGymModalOpen(false);
   };
 
   const analytics = useMemo(() => {
@@ -297,8 +285,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans select-none overflow-hidden" onMouseUp={endDrag}>
-      {/* SIDEBAR */}
-      <aside className="w-72 bg-white border-r border-slate-200 p-6 flex flex-col shrink-0 hidden lg:flex">
+      <aside className="w-72 bg-white border-r border-slate-200 p-6 flex flex-col shrink-0 hidden md:flex">
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Activity size={24} /></div>
           <div>
@@ -313,24 +300,33 @@ export default function App() {
           <button onClick={() => setActiveTab('gym-progress')} className={`flex items-center gap-3 w-full p-4 rounded-2xl transition-all ${activeTab === 'gym-progress' ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-100'}`}><TrendingUp size={18}/> <span className="font-bold">{t.gymProgress}</span></button>
         </nav>
         
+        {activeTab === 'analytics' && (
+          <div className="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase ml-1">View Scope</p>
+            {['daily', 'weekly', 'monthly', 'quarterly', 'yearly'].map(scope => (
+              <button 
+                key={scope} 
+                onClick={() => setAnalyticsView(scope)}
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold capitalize transition-all ${analyticsView === scope ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-white'}`}
+              >
+                {scope}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="pt-6 border-t space-y-2">
            <button onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')} className="w-full p-4 text-[10px] font-black uppercase text-slate-400 hover:text-indigo-600 flex items-center justify-center gap-2"><Languages size={14}/> {lang === 'en' ? '中文' : 'English'}</button>
            <button onClick={() => signOut(auth)} className="w-full p-4 text-[10px] font-black uppercase text-slate-400 hover:text-red-500 flex items-center justify-center gap-2"><LogOut size={14}/> {t.logout}</button>
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col min-w-0">
         <header className="bg-white border-b px-4 md:px-8 py-5 flex items-center justify-between">
           <div className="flex items-center gap-4">
              <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()-7); setSelectedDate(d); }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft size={20}/></button>
              <h2 className="text-sm md:text-lg font-black">{selectedDate.toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-TW', { month: 'long', year: 'numeric' })}</h2>
              <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()+7); setSelectedDate(d); }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight size={20}/></button>
-          </div>
-          <div className="flex lg:hidden items-center gap-2">
-            <button onClick={() => setActiveTab('planner')} className={`p-2 rounded-lg ${activeTab === 'planner' ? 'bg-indigo-100 text-indigo-600' : ''}`}><Calendar size={20}/></button>
-            <button onClick={() => setActiveTab('analytics')} className={`p-2 rounded-lg ${activeTab === 'analytics' ? 'bg-indigo-100 text-indigo-600' : ''}`}><PieChart size={20}/></button>
-            <button onClick={() => setActiveTab('gym-progress')} className={`p-2 rounded-lg ${activeTab === 'gym-progress' ? 'bg-indigo-100 text-indigo-600' : ''}`}><TrendingUp size={20}/></button>
           </div>
         </header>
 
@@ -391,25 +387,19 @@ export default function App() {
                 </div>
               ) : (
                 allWorkouts.map(workout => (
-                  <div key={workout.id} className="bg-white p-6 rounded-[32px] border shadow-sm transition-all hover:shadow-md">
+                  <div key={workout.id} className="bg-white p-6 rounded-[32px] border shadow-sm">
                     <div className="flex justify-between items-center mb-4 border-b pb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center"><Dumbbell size={20}/></div>
-                        <div>
-                          <h4 className="font-black text-slate-900 uppercase tracking-tighter">{workout.id}</h4>
-                          <p className="text-[10px] font-bold text-slate-400">SESSION RECORD</p>
-                        </div>
-                      </div>
+                      <h4 className="font-black text-indigo-600 uppercase tracking-tighter">{workout.id}</h4>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {workout.exercises?.map((ex, idx) => (
-                        <div key={idx} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <p className="font-black text-[11px] uppercase mb-2 text-indigo-600 truncate">{ex.name}</p>
+                        <div key={idx} className="bg-slate-50 p-4 rounded-2xl">
+                          <p className="font-black text-[11px] uppercase mb-2 text-slate-700">{ex.name}</p>
                           <div className="space-y-1">
-                            {ex.sets?.filter(s => s.weight || s.reps).map((s, si) => (
-                              <div key={si} className="flex justify-between text-[10px] font-bold text-slate-500 bg-white p-1 px-2 rounded-lg border border-slate-200/50">
+                            {ex.sets?.filter(s => s.weight && s.reps).map((s, si) => (
+                              <div key={si} className="flex justify-between text-[10px] font-bold text-slate-400">
                                 <span>SET {si + 1}</span>
-                                <span>{s.weight || 0}kg × {s.reps || 0}</span>
+                                <span>{s.weight}kg × {s.reps}</span>
                               </div>
                             ))}
                           </div>
@@ -432,7 +422,7 @@ export default function App() {
                  <select 
                    value={analyticsView} 
                    onChange={(e) => setAnalyticsView(e.target.value)}
-                   className="p-2 bg-white border rounded-xl text-xs font-black uppercase outline-none focus:ring-2 focus:ring-indigo-600"
+                   className="md:hidden p-2 bg-white border rounded-xl text-xs font-black uppercase"
                  >
                    <option value="daily">Daily</option>
                    <option value="weekly">Weekly</option>
@@ -451,7 +441,7 @@ export default function App() {
                        </div>
                     </div>
                  </div>
-                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                    {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => {
                      const hrs = analytics[key] || 0;
                      const total = Object.values(analytics).reduce((a,b)=>a+b, 0) || 1;
@@ -480,21 +470,19 @@ export default function App() {
           {activeTab === 'work-doc' && (
              <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                {Object.values(events).filter(e => e.remarks).map((e, idx) => (
-                 <div key={idx} className="bg-white p-6 rounded-3xl border shadow-sm hover:shadow-md transition-all">
+                 <div key={idx} className="bg-white p-6 rounded-3xl border shadow-sm">
                    <div className="flex items-center gap-2 mb-4">
-                     <div className={`w-8 h-8 ${ACTIVITY_CONFIG[e.type]?.color} rounded-lg flex items-center justify-center text-white shadow-inner`}>
+                     <div className={`w-8 h-8 ${ACTIVITY_CONFIG[e.type]?.color} rounded-lg flex items-center justify-center text-white`}>
                        {ACTIVITY_CONFIG[e.type]?.icon}
                      </div>
                      <div>
                        <p className="text-[10px] font-black uppercase text-slate-400">{e.dayKey}</p>
-                       <p className={`text-xs font-black uppercase ${ACTIVITY_CONFIG[e.type]?.text === 'text-white' ? 'text-slate-800' : ACTIVITY_CONFIG[e.type]?.text}`}>
-                         {ACTIVITY_CONFIG[e.type]?.label} {e.subType && e.type === 'WORK' ? `- ${t[WORK_TYPES.find(wt => wt.id === e.subType)?.label] || e.subType}` : ''}
+                       <p className={`text-xs font-black uppercase ${ACTIVITY_CONFIG[e.type]?.text}`}>
+                         {e.type} {e.subType && e.type === 'WORK' ? `- ${t[WORK_TYPES.find(wt => wt.id === e.subType)?.label] || e.subType}` : ''}
                        </p>
                      </div>
                    </div>
-                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-sm text-slate-600 font-medium italic leading-relaxed">"{e.remarks}"</p>
-                   </div>
+                   <p className="text-sm text-slate-600 font-medium italic">"{e.remarks}"</p>
                  </div>
                ))}
              </div>
@@ -515,39 +503,37 @@ export default function App() {
             
             <div className="grid grid-cols-3 gap-3 mb-6">
               {Object.entries(ACTIVITY_CONFIG).map(([key, cfg]) => (
-                <button key={key} onClick={() => handleSlotAction(key)} className={`flex flex-col items-center gap-2 p-4 rounded-[24px] ${cfg.color} ${cfg.text} hover:scale-105 transition-all shadow-md active:scale-95`}>
+                <button key={key} onClick={() => handleSlotAction(key)} className={`flex flex-col items-center gap-2 p-4 rounded-[24px] ${cfg.color} ${cfg.text} hover:scale-105 transition-all shadow-md`}>
                    <div className="scale-125">{cfg.icon}</div>
                    <span className="font-black text-[8px] uppercase tracking-wider">{cfg.label}</span>
                 </button>
               ))}
             </div>
             
-            <div className="space-y-3">
-              <button onClick={() => handleSlotAction('DELETE')} className="w-full flex items-center justify-center gap-2 py-4 bg-red-50 text-red-500 rounded-2xl font-black uppercase text-[10px] hover:bg-red-100 transition-colors">
-                <Trash2 size={14}/> {t.clearSlot}
-              </button>
-              <button onClick={() => { setIsSlotModalOpen(false); setSelection(null); }} className="w-full py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px] hover:bg-slate-200 transition-colors">{t.cancel}</button>
-            </div>
+            <button onClick={() => handleSlotAction('DELETE')} className="w-full flex items-center justify-center gap-2 py-4 bg-red-50 text-red-500 rounded-2xl font-black uppercase text-[10px] hover:bg-red-100 transition-colors mb-2">
+              <Trash2 size={14}/> {t.clearSlot}
+            </button>
+            <button onClick={() => { setIsSlotModalOpen(false); setSelection(null); }} className="w-full py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px] hover:bg-slate-200 transition-colors">{t.cancel}</button>
           </div>
         </div>
       )}
 
-      {/* DETAIL MODAL (WORK, MOVIES, etc.) */}
+      {/* DETAIL MODAL (WORK, MOVIES, READING, HAPPEN, VIBE_CODING, OTHER) */}
       {isDetailModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[40px] w-full max-w-md p-8 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black uppercase tracking-wider">{ACTIVITY_CONFIG[detailData.type]?.label}</h3>
-                <div className="flex gap-2">
-                  <button onClick={() => setIsSlotModalOpen(true)} className="p-3 text-indigo-600 hover:bg-indigo-50 rounded-2xl text-[10px] font-black uppercase">{t.changeCat}</button>
-                  <button onClick={() => handleSlotAction('DELETE')} className="p-3 text-red-500 hover:bg-red-50 rounded-2xl"><Trash2 size={20}/></button>
-                </div>
+               <h3 className="text-xl font-black uppercase tracking-wider">{ACTIVITY_CONFIG[detailData.type]?.label}</h3>
+               <div className="flex gap-2">
+                 <button onClick={() => setIsSlotModalOpen(true)} className="p-3 text-indigo-600 hover:bg-indigo-50 rounded-2xl text-[10px] font-black uppercase">{t.changeCat}</button>
+                 <button onClick={() => handleSlotAction('DELETE')} className="p-3 text-red-500 hover:bg-red-50 rounded-2xl"><Trash2 size={20}/></button>
+               </div>
             </div>
             
             {detailData.type === 'WORK' && (
               <div className="grid grid-cols-3 gap-2 mb-6">
                 {WORK_TYPES.map(wt => (
-                  <button key={wt.id} onClick={() => setDetailData({...detailData, subType: wt.id})} className={`flex flex-col items-center gap-2 p-4 rounded-2xl transition-all ${detailData.subType === wt.id ? 'bg-orange-500 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
+                  <button key={wt.id} onClick={() => setDetailData({...detailData, subType: wt.id})} className={`flex flex-col items-center gap-2 p-4 rounded-2xl transition-all ${detailData.subType === wt.id ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-400'}`}>
                     {wt.icon} <span className="font-black text-[8px] uppercase">{t[wt.label]}</span>
                   </button>
                 ))}
@@ -558,7 +544,7 @@ export default function App() {
               value={detailData.remarks} 
               onChange={e => setDetailData({...detailData, remarks: e.target.value})}
               placeholder={t.remarks}
-              className="w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm font-medium border-0 focus:ring-2 focus:ring-indigo-500 mb-6 resize-none shadow-inner"
+              className="w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm font-medium border-0 focus:ring-2 focus:ring-indigo-500 mb-6 resize-none"
             />
             <div className="flex gap-3">
               <button onClick={() => { setIsDetailModalOpen(false); setSelection(null); }} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-slate-400 uppercase text-[10px]">{t.cancel}</button>
@@ -571,28 +557,20 @@ export default function App() {
       {/* GYM MODAL */}
       {isGymModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-          <div className="bg-slate-50 rounded-[40px] w-full max-w-2xl h-[80vh] flex flex-col shadow-2xl overflow-hidden border border-white/20">
+          <div className="bg-slate-50 rounded-[40px] w-full max-w-2xl h-[80vh] flex flex-col shadow-2xl overflow-hidden">
             <div className="bg-white px-8 py-6 border-b flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <h3 className="text-2xl font-black flex items-center gap-2"><Dumbbell className="text-indigo-600"/> {t.gymProgress}</h3>
-                <button onClick={() => setIsSlotModalOpen(true)} className="px-4 py-2 bg-slate-100 rounded-xl text-[10px] font-black text-slate-500 uppercase hover:bg-slate-200 transition-colors">{t.changeCat}</button>
+                <button onClick={() => setIsSlotModalOpen(true)} className="px-4 py-2 bg-slate-100 rounded-xl text-[10px] font-black text-slate-500 uppercase">{t.changeCat}</button>
               </div>
-              <button onClick={() => { setIsGymModalOpen(false); setSelection(null); }} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X/></button>
+              <button onClick={() => { setIsGymModalOpen(false); setSelection(null); }} className="p-2 hover:bg-slate-100 rounded-full"><X/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {currentWorkout.map((ex, exIdx) => (
                 <div key={exIdx} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm relative group">
-                  <div className="flex justify-between items-center mb-4 gap-3">
-                    <select 
-                      value={ex.name} 
-                      onChange={e => { 
-                        const u = [...currentWorkout]; 
-                        u[exIdx].name = e.target.value; 
-                        setCurrentWorkout(u); 
-                      }} 
-                      className="flex-1 font-black p-3 bg-slate-50 rounded-2xl text-sm border-0 focus:ring-2 focus:ring-indigo-600 outline-none appearance-none"
-                    >
-                      {EXERCISE_LIST.map(name => <option key={name} value={name}>{name}</option>)}
+                  <div className="flex justify-between items-center mb-4">
+                    <select value={ex.name} onChange={e => { const u = [...currentWorkout]; u[exIdx].name = e.target.value; setCurrentWorkout(u); }} className="flex-1 font-black p-3 bg-slate-50 rounded-2xl text-sm border-0 focus:ring-2 focus:ring-indigo-600 outline-none">
+                      {EXERCISE_LIST.map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
                     <button onClick={() => setCurrentWorkout(currentWorkout.filter((_, i) => i !== exIdx))} className="p-2 text-slate-200 hover:text-red-500"><Trash2 size={18}/></button>
                   </div>
